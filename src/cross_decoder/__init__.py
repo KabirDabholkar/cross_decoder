@@ -1,3 +1,3 @@
-from .cross_decoder import CrossDecoder, LatentAnalysisInterface
+from .cross_decoder import CrossDecoder, LatentAnalysisInterface, CTDAnalysisAdapter
 
-__all__ = ['CrossDecoder', 'LatentAnalysisInterface'] 
+__all__ = ['CrossDecoder', 'LatentAnalysisInterface', 'CTDAnalysisAdapter'] 

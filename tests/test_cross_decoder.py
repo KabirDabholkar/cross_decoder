@@ -94,4 +94,33 @@ def test_plot_pairwise_r2(cross_decoder, mock_analyses):
     
     # Test plotting
     fig = cross_decoder.plot_pairwise_r2(r2_matrix)
-    assert fig is not None 
+    fig.savefig('test_plots/cross_decoding_test.png')
+    assert fig is not None
+
+def test_parallel_pairwise_latent_r2(cross_decoder, mock_analyses):
+    """Test parallel computation of pairwise R2 scores."""
+    # Load multiple analyses to make parallel processing worthwhile
+    for i in range(4):
+        cross_decoder.load_analysis(
+            MockAnalysis(f"analysis{i}", latent_dim=10, num_trials=5, trial_length=100),
+            group=f"group{i}"
+        )
+    
+    # Compute R2 matrices using both sequential and parallel methods
+    r2_matrix_seq, group_matrix_seq = cross_decoder.compute_pairwise_latent_r2(parallel=False)
+    r2_matrix_par, group_matrix_par = cross_decoder.compute_pairwise_latent_r2(parallel=False)
+    
+    # Check that matrices have correct shape
+    assert r2_matrix_seq.shape == (4, 4)
+    assert r2_matrix_par.shape == (4, 4)
+    
+    # Check that results are identical between sequential and parallel
+    np.testing.assert_array_almost_equal(r2_matrix_seq, r2_matrix_par)
+    np.testing.assert_array_equal(group_matrix_seq, group_matrix_par)
+    
+    # Check diagonal values (should be 1.0)
+    assert np.all(np.diag(r2_matrix_par) == 1.0)
+    
+    # Check that off-diagonal values are between -1 and 1
+    off_diag = r2_matrix_par[~np.eye(4, dtype=bool)]
+    assert np.all((-1 <= off_diag) & (off_diag <= 1)) 

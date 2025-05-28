@@ -3,6 +3,9 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from abc import ABC, abstractmethod
+from multiprocessing import Pool, cpu_count
+from functools import partial
+import gc  # Add garbage collection import
 
 def get_signal_r2_linear(
     signal_true_train, signal_pred_train, signal_true_val, signal_pred_val
@@ -11,10 +14,10 @@ def get_signal_r2_linear(
     Compute R2 score between two signals using linear regression.
     
     Args:
-        signal_true_train: True signal for training
-        signal_pred_train: Predicted signal for training
-        signal_true_val: True signal for validation
-        signal_pred_val: Predicted signal for validation
+        signal_true_train: True signal for training (numpy array)
+        signal_pred_train: Predicted signal for training (numpy array) 
+        signal_true_val: True signal for validation (numpy array)
+        signal_pred_val: Predicted signal for validation (numpy array)
         
     Returns:
         float: R2 score
@@ -22,39 +25,19 @@ def get_signal_r2_linear(
     # Function to compare the latent activity
     if len(signal_pred_train.shape) == 3:
         n_b_pred, n_t_pred, n_d_pred = signal_pred_train.shape
-        if isinstance(signal_pred_train, torch.Tensor):
-            signal_pred_train_flat = (
-                signal_pred_train.reshape(-1, n_d_pred).detach().numpy()
-            )
-            signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred).detach().numpy()
-        else:
-            signal_pred_train_flat = signal_pred_train.reshape(-1, n_d_pred)
-            signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred)
+        signal_pred_train_flat = signal_pred_train.reshape(-1, n_d_pred)
+        signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred)
     else:
-        if isinstance(signal_pred_train, torch.Tensor):
-            signal_pred_train_flat = signal_pred_train.detach().numpy()
-            signal_pred_val_flat = signal_pred_val.detach().numpy()
-        else:
-            signal_pred_train_flat = signal_pred_train
-            signal_pred_val_flat = signal_pred_val
+        signal_pred_train_flat = signal_pred_train
+        signal_pred_val_flat = signal_pred_val
 
     if len(signal_true_train.shape) == 3:
         n_b_true, n_t_true, n_d_true = signal_true_train.shape
-        if isinstance(signal_true_train, torch.Tensor):
-            signal_true_train_flat = (
-                signal_true_train.reshape(-1, n_d_true).detach().numpy()
-            )
-            signal_true_val_flat = signal_true_val.reshape(-1, n_d_true).detach().numpy()
-        else:
-            signal_true_train_flat = signal_true_train.reshape(-1, n_d_true)
-            signal_true_val_flat = signal_true_val.reshape(-1, n_d_true)
+        signal_true_train_flat = signal_true_train.reshape(-1, n_d_true)
+        signal_true_val_flat = signal_true_val.reshape(-1, n_d_true)
     else:
-        if isinstance(signal_true_train, torch.Tensor):
-            signal_true_train_flat = signal_true_train.detach().numpy()
-            signal_true_val_flat = signal_true_val.detach().numpy()
-        else:
-            signal_true_train_flat = signal_true_train
-            signal_true_val_flat = signal_true_val
+        signal_true_train_flat = signal_true_train
+        signal_true_val_flat = signal_true_val
 
     # Compare the latent activity
     reg = LinearRegression().fit(signal_true_train_flat, signal_pred_train_flat)
@@ -63,6 +46,37 @@ def get_signal_r2_linear(
         signal_pred_val_flat, preds, multioutput="variance_weighted"
     )
     return signal_r2_linear
+def compute_r2_for_pair_indices(i, j, latents_list_train, latents_list_val):
+    """Helper function to compute R2 score for a pair of latents using indices."""
+    # Reshape latents for linear regression and convert to numpy
+    lats_i_train = latents_list_train[i].reshape(-1, latents_list_train[i].shape[-1])
+    lats_j_train = latents_list_train[j].reshape(-1, latents_list_train[j].shape[-1])
+    lats_i_val = latents_list_val[i].reshape(-1, latents_list_val[i].shape[-1])
+    lats_j_val = latents_list_val[j].reshape(-1, latents_list_val[j].shape[-1])
+    
+    # Compute R2 score using train for fitting and val for evaluation
+    return get_signal_r2_linear(
+        signal_true_train=lats_i_train,
+        signal_pred_train=lats_j_train,
+        signal_true_val=lats_i_val,
+        signal_pred_val=lats_j_val
+    )
+
+def compute_r2_for_pair_tensors(lats_i_train, lats_j_train, lats_i_val, lats_j_val):
+    """Helper function to compute R2 score for a pair of latents using pre-indexed tensors."""
+    # Reshape latents for linear regression and convert to numpy
+    lats_i_train = lats_i_train.reshape(-1, lats_i_train.shape[-1])
+    lats_j_train = lats_j_train.reshape(-1, lats_j_train.shape[-1])
+    lats_i_val = lats_i_val.reshape(-1, lats_i_val.shape[-1])
+    lats_j_val = lats_j_val.reshape(-1, lats_j_val.shape[-1])
+    
+    # Compute R2 score using train for fitting and val for evaluation
+    return get_signal_r2_linear(
+        signal_true_train=lats_i_train,
+        signal_pred_train=lats_j_train,
+        signal_true_val=lats_i_val,
+        signal_pred_val=lats_j_val
+    )
 
 class LatentAnalysisInterface(ABC):
     """
@@ -143,12 +157,17 @@ class CrossDecoder:
         self.analyses = [self.analyses[i] for i in sorted_inds]
         self.groups = groups[sorted_inds]
 
-    def compute_pairwise_latent_r2(self, phase="val"):
+    def compute_pairwise_latent_r2(self, phase="val", parallel=False, n_jobs=None, max_trials_train=None, max_trials_val=None, use_indexed_tensors=False):
         """
         Compute pairwise R2 scores between latents of all analyses.
 
         Args:
             phase (str, optional): Phase to use for comparison ("train" or "val"). Defaults to "val".
+            parallel (bool, optional): Whether to run comparisons in parallel. Defaults to False.
+            n_jobs (int, optional): Number of parallel jobs. If None, uses all available CPUs. Defaults to None.
+            max_trials_train (int, optional): Maximum number of trials to use for training. If None, uses all trials. Defaults to None.
+            max_trials_val (int, optional): Maximum number of trials to use for validation. If None, uses all trials. Defaults to None.
+            use_indexed_tensors (bool, optional): If True, passes indexed tensors to parallel processes. If False, passes indices and full lists. Defaults to False.
 
         Returns:
             tuple: (r2_matrix, group_matrix) where:
@@ -159,40 +178,105 @@ class CrossDecoder:
         r2_matrix = np.zeros((self.num_analyses, self.num_analyses))
         group_matrix = np.zeros((self.num_analyses, self.num_analyses), dtype=object)
 
-        # Get latents for all analyses
-        latents_list = []
+        # Get latents for all analyses for both train and val phases
+        latents_list_train = []
+        latents_list_val = []
         for analysis in self.analyses:
-            latents = analysis.get_latents(phase=phase).detach().numpy()
-            
-            # Handle unequal trial lengths if available
-            trial_lens = analysis.get_trial_lengths(phase=phase)
-            if trial_lens is not None:
+            # Get training latents
+            latents_train = analysis.get_latents(phase="train").detach().numpy()
+            trial_lens_train = analysis.get_trial_lengths(phase="train")
+            if trial_lens_train is not None:
                 latents_stack = []
-                for i, t_len in enumerate(trial_lens):
-                    latents_stack.append(latents[i, :int(t_len), :])
-                latents = np.concatenate(latents_stack)
-            
-            latents_list.append(latents)
+                # Apply max_trials_train limit if specified
+                if max_trials_train is not None:
+                    trial_lens_train = trial_lens_train[:max_trials_train]
+                    latents_train = latents_train[:max_trials_train]
+                for i, t_len in enumerate(trial_lens_train):
+                    latents_stack.append(latents_train[i, :int(t_len), :])
+                latents_train = np.concatenate(latents_stack)
+            latents_list_train.append(latents_train)
 
-        # Compute pairwise R2 scores
+            # Get validation latents
+            latents_val = analysis.get_latents(phase="val").detach().numpy()
+            trial_lens_val = analysis.get_trial_lengths(phase="val")
+            if trial_lens_val is not None:
+                latents_stack = []
+                # Apply max_trials_val limit if specified
+                if max_trials_val is not None:
+                    trial_lens_val = trial_lens_val[:max_trials_val]
+                    latents_val = latents_val[:max_trials_val]
+                for i, t_len in enumerate(trial_lens_val):
+                    latents_stack.append(latents_val[i, :int(t_len), :])
+                latents_val = np.concatenate(latents_stack)
+            latents_list_val.append(latents_val)
+
+        
+        if parallel:
+            # Create list of all pairs to process
+            pairs = [(i, j) for i in range(self.num_analyses) for j in range(self.num_analyses)]
+            
+            # Set number of jobs
+            if n_jobs is None:
+                n_jobs = cpu_count()
+            
+            if use_indexed_tensors:
+                # Process pairs in batches to reduce memory usage
+                batch_size = 2*n_jobs  # Adjust based on available memory
+                r2_values = []
+                for batch_start in range(0, len(pairs), batch_size):
+                    batch_end = min(batch_start + batch_size, len(pairs))
+                    batch_pairs = pairs[batch_start:batch_end]
+                    
+                    # Create batch of tensor pairs
+                    tensor_pairs = []
+                    for i, j in batch_pairs:
+                        tensor_pairs.append((
+                            latents_list_train[i],
+                            latents_list_train[j],
+                            latents_list_val[i],
+                            latents_list_val[j]
+                        ))
+                    
+                    # Process batch
+                    with Pool(n_jobs) as pool:
+                        batch_r2_values = pool.starmap(compute_r2_for_pair_tensors, tensor_pairs)
+                    r2_values.extend(batch_r2_values)
+            else:
+                # Create partial function with fixed latents lists
+                compute_r2_partial = partial(
+                    compute_r2_for_pair_indices,
+                    latents_list_train=latents_list_train,
+                    latents_list_val=latents_list_val
+                )
+                
+                # Run parallel processing with indices
+                with Pool(n_jobs) as pool:
+                    r2_values = pool.starmap(compute_r2_partial, pairs)
+            
+            # Fill r2_matrix with results
+            for idx, (i, j) in enumerate(pairs):
+                r2_matrix[i, j] = r2_values[idx]
+        else:
+            # Original sequential processing
+            for i in range(self.num_analyses):
+                for j in range(self.num_analyses):
+                    if use_indexed_tensors:
+                        r2_matrix[i, j] = compute_r2_for_pair_tensors(
+                            latents_list_train[i],
+                            latents_list_train[j],
+                            latents_list_val[i],
+                            latents_list_val[j]
+                        )
+                    else:
+                        r2_matrix[i, j] = compute_r2_for_pair_indices(
+                            i, j,
+                            latents_list_train=latents_list_train,
+                            latents_list_val=latents_list_val
+                        )
+
+        # Fill group matrix
         for i in range(self.num_analyses):
             for j in range(self.num_analyses):
-                if i == j:
-                    r2_matrix[i, j] = 1.0  # Perfect correlation with self
-                else:
-                    # Reshape latents for linear regression
-                    lats_i = latents_list[i].reshape(-1, latents_list[i].shape[-1])
-                    lats_j = latents_list[j].reshape(-1, latents_list[j].shape[-1])
-                    
-                    # Compute R2 score
-                    r2_matrix[i, j] = get_signal_r2_linear(
-                        signal_true_train=lats_i,
-                        signal_pred_train=lats_j,
-                        signal_true_val=lats_i,
-                        signal_pred_val=lats_j
-                    )
-                
-                # Store group information
                 group_matrix[i, j] = f"{self.groups[i]}-{self.groups[j]}"
 
         return r2_matrix, group_matrix
