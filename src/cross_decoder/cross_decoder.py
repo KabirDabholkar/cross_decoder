@@ -22,23 +22,39 @@ def get_signal_r2_linear(
     # Function to compare the latent activity
     if len(signal_pred_train.shape) == 3:
         n_b_pred, n_t_pred, n_d_pred = signal_pred_train.shape
-        signal_pred_train_flat = (
-            signal_pred_train.reshape(-1, n_d_pred).detach().numpy()
-        )
-        signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred).detach().numpy()
+        if isinstance(signal_pred_train, torch.Tensor):
+            signal_pred_train_flat = (
+                signal_pred_train.reshape(-1, n_d_pred).detach().numpy()
+            )
+            signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred).detach().numpy()
+        else:
+            signal_pred_train_flat = signal_pred_train.reshape(-1, n_d_pred)
+            signal_pred_val_flat = signal_pred_val.reshape(-1, n_d_pred)
     else:
-        signal_pred_train_flat = signal_pred_train.detach().numpy()
-        signal_pred_val_flat = signal_pred_val.detach().numpy()
+        if isinstance(signal_pred_train, torch.Tensor):
+            signal_pred_train_flat = signal_pred_train.detach().numpy()
+            signal_pred_val_flat = signal_pred_val.detach().numpy()
+        else:
+            signal_pred_train_flat = signal_pred_train
+            signal_pred_val_flat = signal_pred_val
 
     if len(signal_true_train.shape) == 3:
         n_b_true, n_t_true, n_d_true = signal_true_train.shape
-        signal_true_train_flat = (
-            signal_true_train.reshape(-1, n_d_true).detach().numpy()
-        )
-        signal_true_val_flat = signal_true_val.reshape(-1, n_d_true).detach().numpy()
+        if isinstance(signal_true_train, torch.Tensor):
+            signal_true_train_flat = (
+                signal_true_train.reshape(-1, n_d_true).detach().numpy()
+            )
+            signal_true_val_flat = signal_true_val.reshape(-1, n_d_true).detach().numpy()
+        else:
+            signal_true_train_flat = signal_true_train.reshape(-1, n_d_true)
+            signal_true_val_flat = signal_true_val.reshape(-1, n_d_true)
     else:
-        signal_true_train_flat = signal_true_train.detach().numpy()
-        signal_true_val_flat = signal_true_val.detach().numpy()
+        if isinstance(signal_true_train, torch.Tensor):
+            signal_true_train_flat = signal_true_train.detach().numpy()
+            signal_true_val_flat = signal_true_val.detach().numpy()
+        else:
+            signal_true_train_flat = signal_true_train
+            signal_true_val_flat = signal_true_val
 
     # Compare the latent activity
     reg = LinearRegression().fit(signal_true_train_flat, signal_pred_train_flat)
