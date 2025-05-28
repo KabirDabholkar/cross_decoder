@@ -1,0 +1,9 @@
+pyproject.toml
+src/cross_decoder/__init__.py
+src/cross_decoder/cross_decoder.py
+src/cross_decoder.egg-info/PKG-INFO
+src/cross_decoder.egg-info/SOURCES.txt
+src/cross_decoder.egg-info/dependency_links.txt
+src/cross_decoder.egg-info/requires.txt
+src/cross_decoder.egg-info/top_level.txt
+tests/test_cross_decoder.py

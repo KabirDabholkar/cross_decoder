@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cross_decoder"
+version = "0.1.0"
+description = "A package for evaluating pairwise latent comparisons between multiple analyses objects"
+requires-python = ">=3.8"
+dependencies = [
+    "torch",
+    "numpy",
+    "scikit-learn",
+    "matplotlib"
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"] 
