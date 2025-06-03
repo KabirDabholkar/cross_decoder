@@ -34,7 +34,7 @@ To use the cross decoder with your model, create a class that inherits from `Lat
 3. `run_name` property - Returns a string identifier for your model
 
 Example:
-```
+```python
 from cross_decoder import CrossDecoder, LatentAnalysisInterface
 
 class YourAnalysis(LatentAnalysisInterface):
@@ -50,6 +50,16 @@ class YourAnalysis(LatentAnalysisInterface):
 
     def run_name(self):
         return self.checkpoint_path
+
+
+CD = CrossDecoder()
+
+CD.load_analysis(YourAnalysis(path1))
+CD.load_analysis(YourAnalysis(path2))
+
+r2_matrix, group_matrix = CD.compute_pairwise_latent_r2()
+
+print(r2_matrix)
 ```
 
 
