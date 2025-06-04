@@ -11,7 +11,8 @@ dependencies = [
     "torch",
     "numpy",
     "scikit-learn",
-    "matplotlib"
+    "matplotlib",
+    "pandas"
 ]
 
 [tool.setuptools]

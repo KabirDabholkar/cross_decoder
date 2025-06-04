@@ -7,6 +7,12 @@ from multiprocessing import Pool, cpu_count
 from functools import partial
 import gc  # Add garbage collection import
 from sklearn.model_selection import train_test_split
+import os
+import json
+from datetime import datetime
+import pandas as pd
+import hashlib
+
 
 def get_signal_r2_linear(
     signal_true_train, signal_pred_train, signal_true_val, signal_pred_val
@@ -120,17 +126,20 @@ class CrossDecoder:
     """
     A class for evaluating pairwise latent comparisons between multiple analyses objects.
     """
-    def __init__(self, comparison_tag=None):
+    def __init__(self, comparison_tag=None, save_dir="decoding_matrices"):
         """
         Initialize the CrossDecoder.
 
         Args:
             comparison_tag (str, optional): Tag for identifying this comparison. Defaults to None.
+            save_dir (str, optional): Directory to save decoding matrices. Defaults to "decoding_matrices".
         """
         self.comparison_tag = comparison_tag
         self.num_analyses = 0
         self.analyses = []
         self.groups = []
+        self.save_dir = save_dir
+        os.makedirs(save_dir, exist_ok=True)
 
     def load_analysis(self, analysis, group="None"):
         """
@@ -318,6 +327,106 @@ class CrossDecoder:
             
         return fig
 
+    def save_decoding_matrices(self, r2_matrix, group_matrix, phase="val"):
+        """
+        Save decoding matrices with metadata.
+
+        Args:
+            r2_matrix (np.ndarray): Matrix of R2 scores
+            group_matrix (np.ndarray): Matrix of group labels
+            phase (str, optional): Phase used for decoding. Defaults to "val"
+        """
+        # Generate deterministic hash IDs for each analysis
+        analysis_ids = []
+        analysis_names = []
+        for analysis in self.analyses:
+            # Get run name properly handling both property and method cases
+            if isinstance(analysis.run_name, property):
+                run_name = analysis.run_name.fget(analysis)
+            else:
+                run_name = analysis.run_name()
+            analysis_names.append(run_name)
+            
+            # Create deterministic hash from run name
+            hash_obj = hashlib.sha256(str(run_name).encode())
+            hash_id = hash_obj.hexdigest()[:8]  # Take first 8 chars of hash
+            analysis_ids.append(hash_id)
+
+        # Create DataFrame with analysis IDs as index/columns
+        df = pd.DataFrame(
+            r2_matrix,
+            index=analysis_ids,
+            columns=analysis_ids
+        )
+
+        # Save as CSV
+        csv_filename = "r2_matrix.csv"
+        csv_path = os.path.join(self.save_dir, csv_filename)
+        df.to_csv(csv_path)
+
+        # Also save the original matrices and metadata
+        base_path = os.path.join(self.save_dir, "decoding")
+
+        # Save matrices
+        np.save(f"{base_path}_r2.npy", r2_matrix)
+        np.save(f"{base_path}_groups.npy", group_matrix)
+
+        # Save metadata
+        metadata = {
+            "phase": phase,
+            "analysis_ids": analysis_ids,
+            "analysis_names": analysis_names,
+            "groups": self.groups,
+            "comparison_tag": self.comparison_tag
+        }
+
+        with open(f"{base_path}_metadata.json", "w") as f:
+            json.dump(metadata, f, indent=4)
+        
+        
+    def load_decoding_matrices(self, unique_id):
+        """
+        Load saved decoding matrices using their unique identifier.
+
+        Args:
+            unique_id (str): The unique identifier of the saved matrices
+
+        Returns:
+            tuple: (r2_matrix, group_matrix, metadata) where:
+                - r2_matrix: Matrix of R2 scores
+                - group_matrix: Matrix of group labels
+                - metadata: Dictionary containing metadata about the saved matrices
+        """
+        base_path = os.path.join(self.save_dir, unique_id)
+        
+        # Load matrices
+        r2_matrix = np.load(f"{base_path}_r2.npy")
+        group_matrix = np.load(f"{base_path}_groups.npy")
+        
+        # Load metadata
+        with open(f"{base_path}_metadata.json", "r") as f:
+            metadata = json.load(f)
+            
+        return r2_matrix, group_matrix, metadata
+
+    def list_saved_matrices(self):
+        """
+        List all saved decoding matrices.
+
+        Returns:
+            list: List of unique identifiers for saved matrices
+        """
+        if not os.path.exists(self.save_dir):
+            return []
+            
+        # Get all metadata files
+        metadata_files = [f for f in os.listdir(self.save_dir) if f.endswith("_metadata.json")]
+        
+        # Extract unique IDs from metadata filenames
+        unique_ids = [f.replace("_metadata.json", "") for f in metadata_files]
+        
+        return unique_ids
+
 # Example implementation for ComputationThroughDynamics framework
 class CTDAnalysisAdapter(LatentAnalysisInterface):
     """
@@ -337,3 +446,4 @@ class CTDAnalysisAdapter(LatentAnalysisInterface):
     @property
     def run_name(self):
         return self.analysis.run_name 
+    
