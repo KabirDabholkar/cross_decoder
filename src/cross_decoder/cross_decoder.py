@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from multiprocessing import Pool, cpu_count
 from functools import partial
 import gc  # Add garbage collection import
+from sklearn.model_selection import train_test_split
 
 def get_signal_r2_linear(
     signal_true_train, signal_pred_train, signal_true_val, signal_pred_val
@@ -157,7 +158,7 @@ class CrossDecoder:
         self.analyses = [self.analyses[i] for i in sorted_inds]
         self.groups = groups[sorted_inds]
 
-    def compute_pairwise_latent_r2(self, phase="val", parallel=False, n_jobs=None, max_trials_train=None, max_trials_val=None, use_indexed_tensors=False):
+    def compute_pairwise_latent_r2(self, phase="val", parallel=False, n_jobs=None, max_trials=None, use_indexed_tensors=False):
         """
         Compute pairwise R2 scores between latents of all analyses.
 
@@ -165,8 +166,7 @@ class CrossDecoder:
             phase (str, optional): Phase to use for comparison ("train" or "val"). Defaults to "val".
             parallel (bool, optional): Whether to run comparisons in parallel. Defaults to False.
             n_jobs (int, optional): Number of parallel jobs. If None, uses all available CPUs. Defaults to None.
-            max_trials_train (int, optional): Maximum number of trials to use for training. If None, uses all trials. Defaults to None.
-            max_trials_val (int, optional): Maximum number of trials to use for validation. If None, uses all trials. Defaults to None.
+            max_trials (int, optional): Maximum number of trials to use. If None, uses all trials. Defaults to None.
             use_indexed_tensors (bool, optional): If True, passes indexed tensors to parallel processes. If False, passes indices and full lists. Defaults to False.
 
         Returns:
@@ -182,34 +182,33 @@ class CrossDecoder:
         latents_list_train = []
         latents_list_val = []
         for analysis in self.analyses:
-            # Get training latents
-            latents_train = analysis.get_latents(phase="train").detach().numpy()
-            trial_lens_train = analysis.get_trial_lengths(phase="train")
-            if trial_lens_train is not None:
+            # Get latents once without kwargs
+            latents = analysis.get_latents()
+            trial_lens = analysis.get_trial_lengths()
+            
+            if trial_lens is not None:
                 latents_stack = []
-                # Apply max_trials_train limit if specified
-                if max_trials_train is not None:
-                    trial_lens_train = trial_lens_train[:max_trials_train]
-                    latents_train = latents_train[:max_trials_train]
-                for i, t_len in enumerate(trial_lens_train):
-                    latents_stack.append(latents_train[i, :int(t_len), :])
-                latents_train = np.concatenate(latents_stack)
+                # Apply max trials limit if specified 
+                if max_trials is not None:
+                    trial_lens = trial_lens[:max_trials]
+                    latents = latents[:max_trials]
+                for i, t_len in enumerate(trial_lens):
+                    latents_stack.append(latents[i, :int(t_len), :])
+                latents = np.concatenate(latents_stack)
+            else:
+                latents = latents[:max_trials]
+                latents = latents.reshape(-1, latents.shape[-1])
+            
+            # Use sklearn to split into train and validation sets
+            latents_train, latents_val = train_test_split(
+                latents, 
+                test_size=0.3, 
+                random_state=42
+            )
+            
             latents_list_train.append(latents_train)
-
-            # Get validation latents
-            latents_val = analysis.get_latents(phase="val").detach().numpy()
-            trial_lens_val = analysis.get_trial_lengths(phase="val")
-            if trial_lens_val is not None:
-                latents_stack = []
-                # Apply max_trials_val limit if specified
-                if max_trials_val is not None:
-                    trial_lens_val = trial_lens_val[:max_trials_val]
-                    latents_val = latents_val[:max_trials_val]
-                for i, t_len in enumerate(trial_lens_val):
-                    latents_stack.append(latents_val[i, :int(t_len), :])
-                latents_val = np.concatenate(latents_stack)
             latents_list_val.append(latents_val)
-
+            
         
         if parallel:
             # Create list of all pairs to process
@@ -221,7 +220,7 @@ class CrossDecoder:
             
             if use_indexed_tensors:
                 # Process pairs in batches to reduce memory usage
-                batch_size = 2*n_jobs  # Adjust based on available memory
+                batch_size = n_jobs * 2
                 r2_values = []
                 for batch_start in range(0, len(pairs), batch_size):
                     batch_end = min(batch_start + batch_size, len(pairs))

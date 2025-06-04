@@ -47,6 +47,7 @@ class YourAnalysis(LatentAnalysisInterface):
 
     def get_latents(self):
         latents = self.model(self.dataset)
+        return latents
 
     def run_name(self):
         return self.checkpoint_path
