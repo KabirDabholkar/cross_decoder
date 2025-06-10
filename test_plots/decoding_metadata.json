@@ -1,0 +1,25 @@
+{
+    "phase": "val",
+    "analysis_ids": [
+        "402bddd3",
+        "e4fb617b",
+        "027abe32",
+        "0d11cca9",
+        "0b6d54d8"
+    ],
+    "analysis_names": [
+        "analysis_5d",
+        "analysis_8d",
+        "analysis_12d",
+        "analysis_15d",
+        "analysis_20d"
+    ],
+    "groups": [
+        "group_5d",
+        "group_8d",
+        "group_12d",
+        "group_15d",
+        "group_20d"
+    ],
+    "comparison_tag": "test"
+}

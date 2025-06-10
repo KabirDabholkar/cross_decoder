@@ -344,7 +344,7 @@ class CrossDecoder:
             if isinstance(analysis.run_name, property):
                 run_name = analysis.run_name.fget(analysis)
             else:
-                run_name = analysis.run_name()
+                run_name = analysis.run_name
             analysis_names.append(run_name)
             
             # Create deterministic hash from run name
@@ -399,9 +399,9 @@ class CrossDecoder:
         """
         base_path = os.path.join(self.save_dir, unique_id)
         
-        # Load matrices
+        # Load matrices - allow_pickle=True for group_matrix since it contains strings
         r2_matrix = np.load(f"{base_path}_r2.npy")
-        group_matrix = np.load(f"{base_path}_groups.npy")
+        group_matrix = np.load(f"{base_path}_groups.npy", allow_pickle=True)
         
         # Load metadata
         with open(f"{base_path}_metadata.json", "r") as f:
