@@ -443,7 +443,6 @@ class CTDAnalysisAdapter(LatentAnalysisInterface):
             return self.analysis.get_trial_lens(phase=phase)
         return None
     
-    @property
     def run_name(self):
         return self.analysis.run_name 
     
