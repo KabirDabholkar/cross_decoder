@@ -327,7 +327,7 @@ class CrossDecoder:
             
         return fig
 
-    def save_decoding_matrices(self, r2_matrix, group_matrix, phase="val"):
+    def save_decoding_matrices(self, r2_matrix, group_matrix, phase="val", save_json_only=False):
         """
         Save decoding matrices with metadata.
 
@@ -335,6 +335,7 @@ class CrossDecoder:
             r2_matrix (np.ndarray): Matrix of R2 scores
             group_matrix (np.ndarray): Matrix of group labels
             phase (str, optional): Phase used for decoding. Defaults to "val"
+            save_json_only (bool, optional): If True, only save the metadata JSON file. Defaults to False
         """
         # Generate deterministic hash IDs for each analysis
         analysis_ids = []
@@ -344,7 +345,7 @@ class CrossDecoder:
             if isinstance(analysis.run_name, property):
                 run_name = analysis.run_name.fget(analysis)
             else:
-                run_name = analysis.run_name
+                run_name = analysis.run_name()
             analysis_names.append(run_name)
             
             # Create deterministic hash from run name
@@ -352,26 +353,7 @@ class CrossDecoder:
             hash_id = hash_obj.hexdigest()[:8]  # Take first 8 chars of hash
             analysis_ids.append(hash_id)
 
-        # Create DataFrame with analysis IDs as index/columns
-        df = pd.DataFrame(
-            r2_matrix,
-            index=analysis_ids,
-            columns=analysis_ids
-        )
-
-        # Save as CSV
-        csv_filename = "r2_matrix.csv"
-        csv_path = os.path.join(self.save_dir, csv_filename)
-        df.to_csv(csv_path)
-
-        # Also save the original matrices and metadata
-        base_path = os.path.join(self.save_dir, "decoding")
-
-        # Save matrices
-        np.save(f"{base_path}_r2.npy", r2_matrix)
-        np.save(f"{base_path}_groups.npy", group_matrix)
-
-        # Save metadata
+        # Create metadata
         metadata = {
             "phase": phase,
             "analysis_ids": analysis_ids,
@@ -380,10 +362,28 @@ class CrossDecoder:
             "comparison_tag": self.comparison_tag
         }
 
+        # Save metadata
+        base_path = os.path.join(self.save_dir, "decoding")
         with open(f"{base_path}_metadata.json", "w") as f:
             json.dump(metadata, f, indent=4)
-        
-        
+
+        if not save_json_only:
+            # Create DataFrame with analysis IDs as index/columns
+            df = pd.DataFrame(
+                r2_matrix,
+                index=analysis_ids,
+                columns=analysis_ids
+            )
+
+            # Save as CSV
+            csv_filename = "r2_matrix.csv"
+            csv_path = os.path.join(self.save_dir, csv_filename)
+            df.to_csv(csv_path)
+
+            # Save matrices
+            np.save(f"{base_path}_r2.npy", r2_matrix)
+            np.save(f"{base_path}_groups.npy", group_matrix)
+
     def load_decoding_matrices(self, unique_id):
         """
         Load saved decoding matrices using their unique identifier.

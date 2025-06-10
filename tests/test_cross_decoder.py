@@ -3,6 +3,9 @@ import torch
 import numpy as np
 from cross_decoder import CrossDecoder, LatentAnalysisInterface, get_signal_r2_linear
 import os
+import json
+import hashlib
+from datetime import datetime
 
 class MockAnalysis(LatentAnalysisInterface):
     """Mock analysis class for testing with random latent data."""
@@ -39,7 +42,6 @@ class MockAnalysis(LatentAnalysisInterface):
         # For testing, we'll use fixed trial lengths
         return None
     
-    @property
     def run_name(self):
         return self._name
 
@@ -284,7 +286,7 @@ def test_related_latent_spaces():
 
 def test_save_load_plot_decoding_matrices(cross_decoder, mock_analyses, tmp_path):
     """Test saving, loading, and plotting decoding matrices with IDs."""
-    print("mock_analyses['analysis1'].run_name:", mock_analyses['analysis1'].run_name)
+    print("mock_analyses['analysis1'].run_name():", mock_analyses['analysis1'].run_name())
     # Load analyses
     cross_decoder.load_analysis(mock_analyses['analysis1'], group="group1")
     cross_decoder.load_analysis(mock_analyses['analysis2'], group="group1")
@@ -364,3 +366,47 @@ def test_get_signal_r2_linear_deterministic():
     
     # Verify results are identical for both 3D and 2D inputs
     np.testing.assert_almost_equal(r2_score1, r2_score3)
+
+def save_decoding_matrices(self, r2_matrix, group_matrix, phase="val", save_json_only=False):
+    """
+    Save decoding matrices with metadata.
+
+    Args:
+        r2_matrix (np.ndarray): Matrix of R2 scores
+        group_matrix (np.ndarray): Matrix of group labels
+        phase (str, optional): Phase used for decoding. Defaults to "val"
+        save_json_only (bool, optional): If True, only save the metadata JSON file. Defaults to False
+    """
+    # Generate deterministic hash IDs for each analysis
+    analysis_ids = []
+    analysis_names = []
+    for analysis in self.analyses:
+        # Get run name properly handling both property and method cases
+        if isinstance(analysis.run_name, property):
+            run_name = analysis.run_name.fget(analysis)
+        else:
+            run_name = analysis.run_name()
+        analysis_names.append(run_name)
+        # Create deterministic hash from run name
+        analysis_id = hashlib.md5(run_name.encode()).hexdigest()[:8]
+        analysis_ids.append(analysis_id)
+    
+    # Create metadata dictionary
+    metadata = {
+        "analysis_ids": analysis_ids,
+        "analysis_names": analysis_names,
+        "groups": self.groups,
+        "phase": phase,
+        "timestamp": datetime.now().isoformat()
+    }
+    
+    # Save metadata
+    metadata_path = os.path.join(self.save_dir, f"{phase}_decoding_metadata.json")
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+    
+    if not save_json_only:
+        # Save matrices
+        np.save(os.path.join(self.save_dir, f"{phase}_r2_matrix.npy"), r2_matrix)
+        if group_matrix is not None:
+            np.save(os.path.join(self.save_dir, f"{phase}_group_matrix.npy"), group_matrix)
