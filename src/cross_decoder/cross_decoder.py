@@ -310,8 +310,8 @@ class CrossDecoder:
         # Set labels
         ax.set_xticks(np.arange(self.num_analyses))
         ax.set_yticks(np.arange(self.num_analyses))
-        ax.set_xticklabels([analysis.run_name for analysis in self.analyses])
-        ax.set_yticklabels([analysis.run_name for analysis in self.analyses])
+        ax.set_xticklabels([analysis.run_name() for analysis in self.analyses])
+        ax.set_yticklabels([analysis.run_name() for analysis in self.analyses])
         
         # Rotate x-axis labels
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
